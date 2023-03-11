@@ -6,8 +6,9 @@
 
 .include "veradefs.asm"
 
-DEFAULT_TEXT_COLOR = $bd	; light green on dark grey
-CURSOR_BLINK_SPEED = 10
+TEXT_COLOR = $bf	; dark grey/marine blue with light grey letters
+CURSOR_COLOR = $e0	; light blue with black letters
+CURSOR_BLINK_SPEED = 15
 
 
 	.section ZeroPage
@@ -22,6 +23,9 @@ CURSOR_BLINK_SPEED = 10
 	cursorenabled	.byte ?
 	cursorblinkst	.byte ?
 	cursorblinkspd	.byte ?
+	blinkcursorx	.byte ?		; x and y position of where the 'blinking' cursor was last drawn
+	blinkcursory	.byte ?
+	cursorattrsave	.byte ?		; old attribute byte of the cursor
 	vsync_cnt_hi	.byte ?
 	vsync_cnt_mi	.byte ?
 	vsync_cnt_lo	.byte ?
@@ -56,8 +60,8 @@ cpu_reset_handler:
 	jsr  init_irqs
 	jsr  show_bootmessage
 	cli			; enable interrupts
-	lda  #1
-	sta  cursorenabled
+	sec
+	jsr  enable_cursor
 	jmp  shell_entrypoint
 
 clear_critical_ram:
@@ -77,11 +81,10 @@ init_audio:
 	
 init_various:
 	; initialize various other things
-	lda  #CURSOR_BLINK_SPEED
-	sta  cursorblinkspd
-	lda  #1
-	sta  cursorblinkst
-	stz  cursorenabled
+	lda  #TEXT_COLOR
+	sta  cursorattrsave
+	clc
+	jsr  enable_cursor
 	rts
 	
 show_bootmessage:
@@ -109,38 +112,57 @@ _1	lda  (zp_ptr),y
 _done	rts
 
 print_char:
+	; output a single character in A to the screen.
+	; clobbers: NONE.
+	phx
 	phy
 	pha
+	ldx  cursorx
 	ldy  cursory
-	lda  cursorx
-	asl  a
-	sta  zp_byte
-	stz  VERA.CTRL
-	stz  VERA.ADDR_H
 	clc
-	lda  _times128_lo,y
-	adc  zp_byte
-	sta  VERA.ADDR_L
-	lda  _times128_hi,y
-	adc  #0
-	sta  VERA.ADDR_M
+	jsr  set_vera_addr_for_xy
 	pla
+	pha
 	sta  VERA.DATA0
-	ply
 	inc  cursorx
 	lda  cursorx
 	cmp  screenwidth
 	bne  _done
 	jsr  print_newline
-_done	rts
+_done	
+	pla
+	ply
+	plx
+	rts
+
+set_vera_addr_for_xy:
+	; Set Vera address0 ptr based on X and Y registers (column, row).
+	; If Carry=0, the tile address is selected.
+	; If Carry=1, an additional +1 is added (so the attribute byte is selected)
+	; Clobbers: A.
+	php		; save carry
+	stz  VERA.CTRL
+	txa
+	asl  a
+	plp
+	adc  _times256_lo,y
+	sta  VERA.ADDR_L
+	lda  #0
+	adc  _times256_hi,y
+	sta  VERA.ADDR_M
+	stz  VERA.ADDR_H
+	rts
 	
-_ := 128*range(60)
-_times128_lo:
+
+_ := 256*range(60)
+_times256_lo:
 	.byte <_
-_times128_hi:
+_times256_hi:
 	.byte >_
 	
 print_newline:
+	; Moves cursor to the first column of the next row.
+	; Clobbers: NONE
 	stz  cursorx
 	inc  cursory
 	lda  cursory
@@ -148,7 +170,21 @@ print_newline:
 	bne  _done
 	; TODO scroll screen up
 	stz  cursory	; for now we jump back to the top
-_done	rts
+_done	pha
+	phx
+	phy
+	jsr  update_cursor
+	ply
+	plx
+	pla
+	rts
+	
+plot:
+	; set new cursor position
+	; clobbers: NONE
+	stx  cursorx
+	sty  cursory
+	rts
 	
 
 init_video:
@@ -157,7 +193,7 @@ init_video:
 	stz  VERA.IEN		; disable all IRQs
 	jsr  set_palette_16
 	jsr  copy_charset
-	lda  #DEFAULT_TEXT_COLOR
+	lda  #TEXT_COLOR
 	sta  textcolor
 	jsr  clear_tilemap
 	jsr  setup_layers
@@ -196,7 +232,7 @@ _c64_pepto
         .word $852  ; 8 = orange
         .word $530  ; 9 = brown
         .word $c67  ; 10 = light red
-        .word $123  ; 11 = dark grey  --- but tweaked to be dark navy blue
+        .word $123  ; 11 = dark grey  --- but tweaked to be dark navy blue (it was $444)
         .word $777  ; 12 = medium grey
         .word $af9  ; 13 = light green
         .word $76e  ; 14 = light blue
@@ -237,7 +273,7 @@ clear_tilemap:
 	sta  VERA.ADDR_H
 	stz  VERA.ADDR_M
 	stz  VERA.ADDR_L
-	lda  #DEFAULT_TEXT_COLOR
+	lda  #TEXT_COLOR
 	sta  textcolor
 	lda  #' '
 	ldy  #64
@@ -256,15 +292,16 @@ _2      sta  VERA.DATA0
 setup_layers:	
 	lda  #%00010000
 	sta  VERA.DC_VIDEO		; enable layer 0
+	lda  #128
+	sta  VERA.DC_HSCALE		; hires x
 	lda  #64
-	sta  VERA.DC_HSCALE		; lores
-	sta  VERA.DC_VSCALE		; lores
-	lda  #%01010000
-	sta  VERA.L0_CONFIG		; 64x64 tile map, 1 bpp
+	sta  VERA.DC_VSCALE		; lores y
+	lda  #%01100000
+	sta  VERA.L0_CONFIG		; 128x64 tile map, 1 bpp
 	stz  VERA.L0_MAPBASE    	; map at $0:0000
 	lda  #TILE_BASE>>9 | %00000000	; 8x8 tiles
 	sta  VERA.L0_TILEBASE
-	lda  #40
+	lda  #80
 	sta  screenwidth
 	lda  #30
 	sta  screenheight
@@ -311,20 +348,75 @@ _brk
 	
 brk_handler:
 	; TODO
-	bra  return_from_irq
+	jmp  return_from_irq
 	
 nmi_handler:
 	; TODO
-	bra  return_from_irq
+	jmp  return_from_irq
 	
 vsync_handler:
+	#Push_vera_state
 	inc  vsync_cnt_lo
-	bne  _done
+	bne  _1
 	inc  vsync_cnt_mi
-	bne  _done
+	bne  _1
 	inc  vsync_cnt_hi
-_done	bra  return_from_irq
+_1	jsr  cursorblinking
+	#Pop_vera_state
+	jmp  return_from_irq
 	
+enable_cursor:
+	lda  #1		; make sure cursor blinks on almost immediately if turned on again
+	sta  cursorblinkspd
+	stz  cursorblinkst
+	bcc  _disable
+	sta  cursorenabled
+	rts
+_disable	
+	stz  cursorenabled
+	rts
+	
+cursorblinking:
+	lda  cursorenabled
+	beq  _done
+	dec  cursorblinkspd
+	bne  _done
+	lda  #CURSOR_BLINK_SPEED
+	sta  cursorblinkspd
+	; need to toggle cursor status
+	lda  cursorblinkst
+	eor  #1
+	sta  cursorblinkst
+	bra  update_cursor
+_done	rts	
+
+update_cursor:
+	lda  cursorenabled
+	beq  _done
+	; first turn cursor off on old position
+	ldx  blinkcursorx
+	ldy  blinkcursory
+	sec
+	jsr  set_vera_addr_for_xy
+	lda  cursorattrsave
+	sta  VERA.DATA0
+	lda  cursorblinkst
+	beq  _done
+	; turn cursor on on current position
+	ldx  cursorx
+	ldy  cursory
+	stx  blinkcursorx
+	sty  blinkcursory
+	sec
+	jsr  set_vera_addr_for_xy
+	lda  VERA.DATA0
+	sta  cursorattrsave
+	lda  #CURSOR_COLOR
+	sta  VERA.DATA0
+_done	rts
+
+
+
 irq_handler:
 	lda  VERA.ISR
 	tay

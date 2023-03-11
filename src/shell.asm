@@ -9,10 +9,13 @@ shell_entrypoint:
 	lda  #<_message1
 	ldy  #>_message1
 	jsr  printz
-	jsr  print_newline
+	ldx  #5
+	ldy  #10
+	jsr  plot
 	lda  #<_message2
 	ldy  #>_message2
 	jsr  printz
+	jsr  print_newline
 _done	wai
 	bra  _done
 	

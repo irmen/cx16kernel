@@ -45,3 +45,43 @@ VERA	.block
 	SPRITES_BASE	= $1FC00
 	.bend
 	.endvirtual
+
+Push_vera_state	.macro
+	lda  VERA.ADDR_L
+	pha
+	lda  VERA.ADDR_M
+	pha
+	lda  VERA.ADDR_H
+	pha
+	lda  VERA.CTRL
+	pha
+	eor  #1
+	sta  VERA.CTRL
+	lda  VERA.ADDR_L
+	pha
+	lda  VERA.ADDR_M
+	pha
+	lda  VERA.ADDR_H
+	pha
+	lda  VERA.CTRL
+	pha
+.endmacro
+
+Pop_vera_state	.macro
+	pla
+	sta  VERA.CTRL
+	pla
+	sta  VERA.ADDR_H
+	pla
+	sta  VERA.ADDR_M
+	pla
+	sta  VERA.ADDR_L
+	pla
+	sta  VERA.CTRL
+	pla
+	sta  VERA.ADDR_H
+	pla
+	sta  VERA.ADDR_M
+	pla
+	sta  VERA.ADDR_L
+.endmacro
