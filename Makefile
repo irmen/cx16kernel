@@ -1,13 +1,13 @@
 .PHONY:  all clean emu
 
-all:  mykernal.bin
+all:  kernel.bin
 
 clean:
-	rm -f *.vice-* *.bin
+	rm -f *.vice-* *.bin *.list
 
-emu:  mykernal.bin
+emu:  kernel.bin
 	PULSE_LATENCY_MSEC=20 x16emu -randram -sdcard ~/cx16sdcard.img -scale 2 -quality best -rom $<
 
-mykernal.bin: src/mykernal.asm src/charset.bin
-	64tass --ascii --case-sensitive --nostart --list=myrom.list -Wall -o $@ $<
+kernel.bin: src/main.asm src/kernel.asm src/veradefs.asm src/shell.asm src/charset.bin
+	64tass --ascii --case-sensitive --nostart --list=kernel.list -Wall --no-monitor -o $@ $<
 
