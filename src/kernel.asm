@@ -2,7 +2,7 @@
 ; The operating system Kernel.
 
 .cpu  'w65c02'
-.enc  'screen'
+.enc  'none'
 
 .include "veradefs.asm"
 
@@ -97,8 +97,8 @@ show_bootmessage:
 	jsr  printz
 	jmp  print_newline
 	
-_message1	.text "*** custom kernel rom initialized! ***",0
-_message2	.text "this is the kernel boot message.",0
+_message1	.text "*** Custom kernel ROM initialized! ***",0
+_message2	.text "This is the kernel boot message.",0
 	
 printz:
 	sta  zp_ptr
@@ -485,7 +485,8 @@ init_irq_vectors:
 	
 	.section CharSet
 charset:
-	.binary "charset.bin",0,256*8          	; only the first 256 characters
+	.include "iso-8859-15.asm"
+	; .binary "charset.bin",0,256*8          	; only the first 256 characters
 	.endsection
 	
 	
