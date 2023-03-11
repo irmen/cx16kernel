@@ -6,8 +6,8 @@ clean:
 	rm -f *.vice-* *.bin
 
 emu:  mykernal.bin
-	x16emu -randram -sdcard ~/cx16sdcard.img -scale 2 -quality best -rom $<
+	PULSE_LATENCY_MSEC=20 x16emu -randram -sdcard ~/cx16sdcard.img -scale 2 -quality best -rom $<
 
-mykernal.bin: src/mykernal.asm
+mykernal.bin: src/mykernal.asm src/charset.bin
 	64tass --ascii --case-sensitive --nostart --list=myrom.list -Wall -o $@ $<
 
